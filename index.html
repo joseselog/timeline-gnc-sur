@@ -410,12 +410,12 @@
 
         @keyframes slideIn { from { transform: translateX(400px); } to { transform: translateX(0); } }
     </style>
-    <!-- Firebase -->
+    <!-- Firebase Realtime DB -->
     <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js"></script>
     
     <script>
-        // Firebase Config
+        // Config Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyA50tUTec6JJLrfQq0LErRfPva7TDEF2ro",
             authDomain: "timeline-gnc-sur.firebaseapp.com",
@@ -423,19 +423,23 @@
             projectId: "timeline-gnc-sur",
             storageBucket: "timeline-gnc-sur.firebasestorage.app",
             messagingSenderId: "848436485262",
-            appId: "1:848436485262:web:045719d047b92eb8f0bddf",
-            measurementId: "G-GT748ZNHGF"
+            appId: "1:848436485262:web:045719d047b92eb8f0bddf"
         };
         
-        firebase.initializeApp(firebaseConfig);
-        window.firebaseReady = true;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            window.db = firebase.database();
+            console.log('✅ Firebase Inicializado');
+        } catch (e) {
+            console.error('❌ Error Firebase:', e);
+        }
     </script>
 </head>
 <body>
     <div id="loginScreen" class="login-screen">
         <div class="login-box">
             <h1>GNC Logística</h1>
-            <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 1.5rem;">Sistema v5.24 - Multi-Usuario Firebase + Sincronización en Vivo</p>
+            <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 1.5rem;">Sistema v5.24 SIMPLE - Multi-Usuario Firebase (Polling 3s)</p>
             <form id="loginForm">
                 <div class="form-group">
                     <label>Usuario</label>
@@ -763,55 +767,62 @@
                     localStorage.setItem('deliveries', JSON.stringify([]));
                 }
                 
-                // Sincronizar con Firebase al iniciar
-                this.initFirebase();
+                // Cargar datos de Firebase al iniciar
+                setTimeout(() => this.syncFromFirebase(), 500);
+                
+                // Polling cada 3 segundos para traer cambios
+                setInterval(() => this.syncFromFirebase(), 3000);
             }
             
-            initFirebase() {
-                if (!window.firebaseReady) return;
+            syncToFirebase() {
+                if (!window.db || !this.user) return;
                 
-                const db = firebase.database();
-                
-                // Traer clientes desde Firebase
-                db.ref('clientes').once('value').then(snapshot => {
-                    if (snapshot.exists()) {
-                        localStorage.setItem('clients', JSON.stringify(snapshot.val()));
-                    }
-                });
-                
-                // Traer entregas desde Firebase
-                db.ref('entregas').once('value').then(snapshot => {
-                    if (snapshot.exists()) {
-                        localStorage.setItem('deliveries', JSON.stringify(snapshot.val()));
-                    }
-                });
-                
-                // Escuchar cambios en clientes (real-time)
-                db.ref('clientes').on('value', snapshot => {
-                    if (snapshot.exists()) {
-                        localStorage.setItem('clients', JSON.stringify(snapshot.val()));
-                        if (this.user) this.render();
-                    }
-                });
-                
-                // Escuchar cambios en entregas (real-time)
-                db.ref('entregas').on('value', snapshot => {
-                    if (snapshot.exists()) {
-                        localStorage.setItem('deliveries', JSON.stringify(snapshot.val()));
-                        if (this.user) this.render();
-                    }
-                });
+                try {
+                    const clients = JSON.parse(localStorage.getItem('clients') || '[]');
+                    const deliveries = JSON.parse(localStorage.getItem('deliveries') || '[]');
+                    
+                    window.db.ref('gnc-sur/clientes').set(clients);
+                    window.db.ref('gnc-sur/entregas').set(deliveries);
+                    
+                    console.log('📤 Guardado en Firebase');
+                } catch (e) {
+                    console.error('❌ Error al guardar Firebase:', e);
+                }
             }
             
-            saveToFirebase() {
-                if (!window.firebaseReady || !this.user) return;
+            syncFromFirebase() {
+                if (!window.db) return;
                 
-                const db = firebase.database();
-                const clients = JSON.parse(localStorage.getItem('clients') || '[]');
-                const deliveries = JSON.parse(localStorage.getItem('deliveries') || '[]');
-                
-                db.ref('clientes').set(clients).catch(err => console.error('Error guardando clientes:', err));
-                db.ref('entregas').set(deliveries).catch(err => console.error('Error guardando entregas:', err));
+                try {
+                    window.db.ref('gnc-sur/clientes').once('value').then(snap => {
+                        if (snap.exists()) {
+                            const remoteData = snap.val();
+                            const localData = JSON.parse(localStorage.getItem('clients') || '[]');
+                            
+                            // Solo actualiza si hay cambios
+                            if (JSON.stringify(remoteData) !== JSON.stringify(localData)) {
+                                localStorage.setItem('clients', JSON.stringify(remoteData));
+                                console.log('📥 Clientes actualizados desde Firebase');
+                                if (this.user) this.render();
+                            }
+                        }
+                    });
+                    
+                    window.db.ref('gnc-sur/entregas').once('value').then(snap => {
+                        if (snap.exists()) {
+                            const remoteData = snap.val();
+                            const localData = JSON.parse(localStorage.getItem('deliveries') || '[]');
+                            
+                            if (JSON.stringify(remoteData) !== JSON.stringify(localData)) {
+                                localStorage.setItem('deliveries', JSON.stringify(remoteData));
+                                console.log('📥 Entregas actualizadas desde Firebase');
+                                if (this.user) this.render();
+                            }
+                        }
+                    });
+                } catch (e) {
+                    console.error('❌ Error al leer Firebase:', e);
+                }
             }
 
             setupListeners() {
@@ -934,11 +945,11 @@
                 });
                 
                 localStorage.setItem('clients', JSON.stringify(clients));
-                this.saveToFirebase();
                 localStorage.removeItem('estadoIngreso');
                 this.toast('✅ Stocks actualizados correctamente', 'success');
                 this.render();
                 this.renderUnitValidator();
+                this.syncToFirebase(); // 📤 Sincronizar
             }
 
             calcStockUnit(unitId) {
@@ -1368,6 +1379,7 @@
                     this.toast('✅ Entrega movida', 'success');
                     this.render();
                     this.renderUnitValidator();
+                    this.syncToFirebase(); // 📤 Sincronizar
                 }
             }
 
@@ -1487,6 +1499,7 @@
                         }
                         
                         this.render();
+                        this.syncToFirebase(); // 📤 Sincronizar después de editar
                     };
 
                     cell.innerHTML = '';
