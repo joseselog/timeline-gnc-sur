@@ -410,9 +410,9 @@
 
         @keyframes slideIn { from { transform: translateX(400px); } to { transform: translateX(0); } }
     </style>
-    <!-- Firebase Realtime DB -->
-    <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js"></script>
+    <!-- Firebase Realtime DB (compat - sin módulos) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     
     <script>
         // Config Firebase
@@ -426,13 +426,10 @@
             appId: "1:848436485262:web:045719d047b92eb8f0bddf"
         };
         
-        try {
-            firebase.initializeApp(firebaseConfig);
-            window.db = firebase.database();
-            console.log('✅ Firebase Inicializado');
-        } catch (e) {
-            console.error('❌ Error Firebase:', e);
-        }
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        window.db = firebase.database();
+        console.log('✅ Firebase Inicializado correctamente');
     </script>
 </head>
 <body>
@@ -781,10 +778,17 @@
                     const clients = JSON.parse(localStorage.getItem('clients') || '[]');
                     const deliveries = JSON.parse(localStorage.getItem('deliveries') || '[]');
                     
-                    window.db.ref('gnc-sur/clientes').set(clients);
-                    window.db.ref('gnc-sur/entregas').set(deliveries);
+                    window.db.ref('gnc-sur/clientes').set(clients).then(() => {
+                        console.log('📤 Clientes guardados en Firebase');
+                    }).catch(err => {
+                        console.error('❌ Error guardando clientes:', err.message);
+                    });
                     
-                    console.log('📤 Guardado en Firebase');
+                    window.db.ref('gnc-sur/entregas').set(deliveries).then(() => {
+                        console.log('📤 Entregas guardadas en Firebase');
+                    }).catch(err => {
+                        console.error('❌ Error guardando entregas:', err.message);
+                    });
                 } catch (e) {
                     console.error('❌ Error al guardar Firebase:', e);
                 }
@@ -794,23 +798,24 @@
                 if (!window.db) return;
                 
                 try {
-                    window.db.ref('gnc-sur/clientes').once('value').then(snap => {
-                        if (snap.exists()) {
-                            const remoteData = snap.val();
+                    window.db.ref('gnc-sur/clientes').once('value', (snapshot) => {
+                        if (snapshot.exists()) {
+                            const remoteData = snapshot.val();
                             const localData = JSON.parse(localStorage.getItem('clients') || '[]');
                             
-                            // Solo actualiza si hay cambios
                             if (JSON.stringify(remoteData) !== JSON.stringify(localData)) {
                                 localStorage.setItem('clients', JSON.stringify(remoteData));
                                 console.log('📥 Clientes actualizados desde Firebase');
                                 if (this.user) this.render();
                             }
                         }
+                    }).catch(err => {
+                        console.error('❌ Error leyendo clientes:', err.message);
                     });
                     
-                    window.db.ref('gnc-sur/entregas').once('value').then(snap => {
-                        if (snap.exists()) {
-                            const remoteData = snap.val();
+                    window.db.ref('gnc-sur/entregas').once('value', (snapshot) => {
+                        if (snapshot.exists()) {
+                            const remoteData = snapshot.val();
                             const localData = JSON.parse(localStorage.getItem('deliveries') || '[]');
                             
                             if (JSON.stringify(remoteData) !== JSON.stringify(localData)) {
@@ -819,6 +824,8 @@
                                 if (this.user) this.render();
                             }
                         }
+                    }).catch(err => {
+                        console.error('❌ Error leyendo entregas:', err.message);
                     });
                 } catch (e) {
                     console.error('❌ Error al leer Firebase:', e);
