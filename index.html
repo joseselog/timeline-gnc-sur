@@ -436,7 +436,7 @@
     <div id="loginScreen" class="login-screen">
         <div class="login-box">
             <h1>GNC Logística</h1>
-            <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 1.5rem;">Sistema v5.24 SIMPLE - Multi-Usuario Firebase (Polling 3s)</p>
+            <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 1.5rem;">Sistema v5.25 - Listeners Firebase en Tiempo Real (Sin localStorage)</p>
             <form id="loginForm">
                 <div class="form-group">
                     <label>Usuario</label>
@@ -719,6 +719,7 @@
                 this.selectedCells = new Set();
                 this.isDragging = false;
                 this.dragStart = null;
+                this.currentSection = 'timeline'; // Agregar esto
 
                 this.initData();
                 this.setupListeners();
@@ -767,8 +768,46 @@
                 // Cargar datos de Firebase al iniciar
                 setTimeout(() => this.syncFromFirebase(), 500);
                 
-                // Polling cada 3 segundos para traer cambios
-                setInterval(() => this.syncFromFirebase(), 3000);
+                // LISTENERS EN TIEMPO REAL (en lugar de polling)
+                this.setupFirebaseListeners();
+            }
+            
+            setupFirebaseListeners() {
+                if (!window.db) return;
+                
+                // Escuchar cambios en clientes en TIEMPO REAL
+                window.db.ref('gnc-sur/clientes').on('value', (snapshot) => {
+                    if (snapshot.exists()) {
+                        const remoteData = snapshot.val();
+                        const localData = JSON.parse(localStorage.getItem('clients') || '[]');
+                        
+                        if (JSON.stringify(remoteData) !== JSON.stringify(localData)) {
+                            localStorage.setItem('clients', JSON.stringify(remoteData));
+                            console.log('📥 CLIENTES ACTUALIZADOS (listener en vivo)');
+                            if (this.user && this.currentSection === 'timeline') {
+                                this.render();
+                            }
+                        }
+                    }
+                });
+                
+                // Escuchar cambios en entregas en TIEMPO REAL
+                window.db.ref('gnc-sur/entregas').on('value', (snapshot) => {
+                    if (snapshot.exists()) {
+                        const remoteData = snapshot.val();
+                        const localData = JSON.parse(localStorage.getItem('deliveries') || '[]');
+                        
+                        if (JSON.stringify(remoteData) !== JSON.stringify(localData)) {
+                            localStorage.setItem('deliveries', JSON.stringify(remoteData));
+                            console.log('📥 ENTREGAS ACTUALIZADAS (listener en vivo)');
+                            if (this.user && this.currentSection === 'timeline') {
+                                this.render();
+                            }
+                        }
+                    }
+                });
+                
+                console.log('✅ Listeners Firebase activados');
             }
             
             syncToFirebase() {
@@ -1063,6 +1102,7 @@
             }
 
             switchSection(section) {
+                this.currentSection = section; // Actualizar sección actual
                 document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
                 document.querySelector(`[data-section="${section}"]`)?.classList.add('active');
                 document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
